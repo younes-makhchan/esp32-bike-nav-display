@@ -40,15 +40,29 @@ phone (Android app + web page)  --Wi-Fi hotspot-->  ESP32-S3 board
    - `HOTSPOT_SSID` / `HOTSPOT_PASSWORD`: your phone's hotspot.
    - `AMAP_JS_KEY` / `AMAP_JS_SECURITY_CODE`: an AMap *Web端 (JS API)* key and its security code from
      <https://console.amap.com/>. They are inserted into the page at build time and are never committed.
-2. **Firmware** ([PlatformIO](https://platformio.org/)):
+2. **Flash the ESP32 board** ([PlatformIO](https://platformio.org/) and a USB-C data cable needed). The firmware is
+   not distributed as a ready-made file, because it contains your own hotspot name and password, so you build it
+   yourself:
    ```bash
-   pio run -e rootmaker                 # build
-   pio run -e rootmaker -t upload       # flash
-   pio device monitor -b 115200         # serial log
+   git clone https://github.com/younes-makhchan/esp32-bike-nav-display
+   cd esp32-bike-nav-display
+   cp include/secrets.example.h include/secrets.h     # then edit it (step 1)
+   pio run -e rootmaker -t upload                     # build and flash
+   pio device monitor -b 115200                       # optional: serial log
    ```
-   If the build fails on `Rootmaker_btn.h` / `Rootmaker_lcd.h`, run it once more after the libraries are installed
-   (`scripts/ensure_ryzobee_symlinks.py` fixes case mismatches in the Ryzobee library on Linux).
-3. **Android app** (Android SDK required, path in `android/local.properties`):
+   - Connect the board over USB first. PlatformIO finds the serial port by itself (`/dev/ttyACM0` on Linux, `COMx`
+     on Windows). The first build downloads the libraries and takes a few minutes.
+   - **If flashing says `Failed to connect to ESP32-S3`:** put the board in download mode. Unplug it, hold the
+     **BOOT** button, plug it back in, release BOOT, and run the upload command again. The port name can change
+     afterwards (for example `ttyACM1`).
+   - On Linux, if access to the port is denied, add yourself to the serial group once:
+     `sudo usermod -aG dialout $USER`, then log out and in.
+   - If the build fails on `Rootmaker_btn.h` / `Rootmaker_lcd.h`, run it once more after the libraries are installed
+     (`scripts/ensure_ryzobee_symlinks.py` fixes case mismatches in the Ryzobee library on Linux).
+   - Other commands: `pio run -e rootmaker` builds without flashing.
+3. **Android app.** Easiest: install the APK from the [Releases](../../releases) page (it contains no keys; open the
+   gear icon and enter your AMap key and security code). To build it yourself (Android SDK required, path in
+   `android/local.properties`):
    ```bash
    cd android
    ./gradlew assembleDebug              # app/build/outputs/apk/debug/app-debug.apk
