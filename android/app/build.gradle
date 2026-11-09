@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.bikenav.gps'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.bikenav.gps'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+// The app shows the same page the board used to serve: one source file (src/amap_companion.html).
+// The AMap keys are not kept in git: they come from include/secrets.h (AMAP_JS_KEY, AMAP_JS_SECURITY_CODE).
+def secretsFile = file("$rootDir/../include/secrets.h")
+def secret = { String name ->
+    def m = secretsFile.exists() ? (secretsFile.text =~ /#define\s+$name\s+"([^"]*)"/) : null
+    (m != null && m.find()) ? m.group(1) : ''
+}
+
+tasks.register('syncPage', Copy) {
+    from("$rootDir/../src/amap_companion.html") {
+        rename { 'index.html' }
+        filter { String line -> line.replace('__AMAP_KEY__', secret('AMAP_JS_KEY')).replace('__AMAP_SECURITY_CODE__', secret('AMAP_JS_SECURITY_CODE')) }
+    }
+    into "$projectDir/src/main/assets"
+}
+tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn 'syncPage' }
+
+dependencies {
+    implementation 'com.google.zxing:core:3.5.3'          // QR decoding only (pure Java, ~0.5 MB)
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'           // org.json is built into Android; tests run on a plain JVM
+}

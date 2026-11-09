@@ -1,0 +1,25 @@
+dependencies:
+  idf: '>=5.0'
+  lvgl/lvgl: '>=9.3.0'
+description: Map tiles component for LVGL 9.x - offline map display, smooth-panning
+  map view, route rendering and turn-by-turn navigation
+files:
+  exclude:
+  - .codex/**/*
+  - script/__pycache__/**/*
+license: MIT
+maintainers:
+- Eric Nam <thatprojectstudio@gmail.com>
+repository: https://github.com/0015/map_tiles.git
+repository_info:
+  commit_sha: 79940615cbfba0d5cccaa1bc99a686481c532e3f
+targets:
+- esp32
+- esp32s2
+- esp32s3
+- esp32c3
+- esp32c6
+- esp32h2
+- esp32p4
+url: https://github.com/0015/map_tiles
+version: 2.0.0

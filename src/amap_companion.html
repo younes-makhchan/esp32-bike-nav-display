@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="zh-CN" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>高德骑行导航</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    background: #eaf0f6; overflow: hidden; position: fixed; inset: 0; user-select: none;
+}
+button { font-family: inherit; }
+
+/* ============ MAP ============ */
+#map-screen { position: fixed; inset: 0; display: none; }
+#map-container { width: 100%; height: 100%; }
+
+/* AMap logo / scale are moved above the bottom UI (never hidden) */
+body.nav-mode .amap-logo { left: 14px !important; bottom: calc(84px + env(safe-area-inset-bottom)) !important; }
+body.nav-mode .amap-copyright { left: auto !important; right: 14px !important; bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
+body.nav-mode .amap-scalecontrol { left: 118px !important; bottom: calc(92px + env(safe-area-inset-bottom)) !important; }
+body.preview-mode .amap-logo { left: 14px !important; bottom: calc(196px + env(safe-area-inset-bottom)) !important; }
+body.preview-mode .amap-copyright { left: auto !important; right: 14px !important; bottom: calc(192px + env(safe-area-inset-bottom)) !important; }
+body.preview-mode .amap-scalecontrol { left: 118px !important; bottom: calc(204px + env(safe-area-inset-bottom)) !important; }
+
+/* ============ SEARCH (browse) ============ */
+#search-bar { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 500; display: flex; align-items: center; gap: 10px; }
+#search-input-wrap { flex: 1; height: 48px; background: #fff; border-radius: 26px; box-shadow: 0 4px 18px rgba(0,0,0,.12); display: flex; align-items: center; padding: 0 16px; }
+#search-input-wrap .ico { color: #2878ff; margin-right: 10px; font-size: 16px; }
+#tipinput { flex: 1; border: 0; outline: 0; background: transparent; font-size: 15px; color: #1a202c; user-select: text; }
+#settings-btn { display: none; flex: none; width: 48px; height: 48px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 4px 18px rgba(0,0,0,.12);
+    align-items: center; justify-content: center; cursor: pointer; }
+body.native #settings-btn { display: flex; }
+#clear-btn { display: none; background: none; border: 0; color: #a0aec0; font-size: 18px; cursor: pointer; padding: 4px; }
+.amap-sug-result { z-index: 99999 !important; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.15); }
+body.preview-mode #search-bar, body.nav-mode #search-bar { display: none; }
+
+/* ============ RIGHT PILL: refresh (preview + nav) + locate (always) ============ */
+#right-pill {
+    position: absolute; right: 14px; bottom: calc(28px + env(safe-area-inset-bottom)); z-index: 400;
+    width: 54px; padding: 4px 0; background: #fff; border-radius: 27px; box-shadow: 0 4px 16px rgba(0,0,0,.14);
+    display: flex; flex-direction: column; align-items: center;
+}
+#right-pill button { width: 54px; height: 54px; border: 0; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 27px; }
+#right-pill button:active { background: #f1f4f8; }
+#right-pill svg { width: 26px; height: 26px; }
+#btn-refresh { display: none !important; }
+body.preview-mode #btn-refresh, body.nav-mode #btn-refresh { display: flex !important; }
+body.preview-mode #right-pill { bottom: calc(204px + env(safe-area-inset-bottom)); }
+body.nav-mode #right-pill { bottom: calc(112px + env(safe-area-inset-bottom)); }
+#btn-locate.busy svg { animation: spin 1s linear infinite; }
+
+/* ============ PREVIEW SHEET (route + start) ============ */
+#preview-sheet {
+    display: none; position: absolute; left: 14px; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 500;
+    background: #fff; border-radius: 28px; box-shadow: 0 6px 26px rgba(0,0,0,.18); padding: 16px 18px 18px;
+}
+body.preview-mode #preview-sheet { display: block; }
+.ps-head { display: flex; align-items: center; gap: 10px; }
+.ps-title { flex: 1; font-size: 18px; font-weight: 800; color: #1a202c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-close { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f1f4f8; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.ps-close svg { width: 16px; height: 16px; }
+.ps-info { margin: 8px 0 14px; font-size: 14px; color: #5b6676; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.ps-info b { color: #1a202c; font-size: 20px; font-weight: 800; }
+.ps-info .eta { color: #2878ff; font-weight: 700; }
+.ps-start {
+    width: 100%; height: 52px; border: 0; border-radius: 26px; background: linear-gradient(180deg, #3a8bff, #1f6bff);
+    color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 2px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+    box-shadow: 0 6px 16px rgba(40,120,255,.35);
+}
+.ps-start:active { transform: scale(.98); }
+.ps-btns { display: flex; gap: 10px; }
+.ps-btns .ps-start { flex: 1; width: auto; min-width: 0; letter-spacing: 1px; }
+.ps-start.sim { background: linear-gradient(180deg, #34d399, #16a34a); box-shadow: 0 6px 16px rgba(22,163,74,.35); flex: 0 0 38%; }
+.ps-start svg { width: 24px; height: 24px; fill: #fff; }
+
+/* ============ NAV UI ============ */
+#nav-ui { display: none; }
+body.nav-mode #nav-ui { display: block; }
+
+#pill-3d {
+    position: absolute; left: 14px; bottom: calc(138px + env(safe-area-inset-bottom)); z-index: 400;
+    width: 54px; padding: 11px 4px; background: #fff; border: 0; border-radius: 27px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.13);
+    display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer;
+}
+#pill-3d:active { transform: scale(.96); background: #f7fafc; }
+#pill-3d .t { font-size: 18px; font-weight: 900; color: #1a202c; line-height: 1; }
+#pill-3d .s { font-size: 10.5px; font-weight: 600; color: #4a5568; letter-spacing: -.2px; }
+
+#bottom-bar {
+    position: absolute; left: 14px; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 500;
+    height: 66px; background: #fff; border-radius: 33px; box-shadow: 0 6px 24px rgba(0,0,0,.16);
+    display: flex; align-items: center; justify-content: space-between; padding: 8px 20px 0;
+}
+#bottom-bar::before { content: ""; position: absolute; top: 7px; left: 50%; width: 44px; height: 4px; margin-left: -22px; border-radius: 2px; background: #cfd6df; }
+.bar-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: none; border: 0; cursor: pointer; }
+.bar-icon svg { width: 26px; height: 26px; }
+.bar-center { flex: 1; background: none; border: 0; cursor: pointer; color: #2878ff; font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+
+/* ============ TOP DIRECTION BANNER (nav only) ============ */
+#nav-banner {
+    position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 14px; right: 14px; z-index: 600;
+    min-height: 104px; background: #121a2e; border-radius: 32px; box-shadow: 0 8px 26px rgba(10,18,35,.45);
+    display: flex; align-items: center; gap: 16px; padding: 12px 22px 12px 20px; color: #fff; overflow: hidden;
+}
+.nb-icon { width: 64px; height: 64px; flex: 0 0 64px; }
+.nb-icon svg { width: 64px; height: 64px; display: block; }
+.nb-text { flex: 1; min-width: 0; }
+.nb-l1, .nb-l2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.12; }
+.nb-l2:empty { display: none; }
+.nb-dim { color: rgba(255,255,255,.62); font-size: 22px; font-weight: 600; }
+.nb-big { font-size: 56px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+.nb-unit { font-size: 22px; font-weight: 600; color: rgba(255,255,255,.62); margin: 0 8px 0 3px; }
+.nb-act, .nb-road { font-size: 30px; font-weight: 800; }
+.nb-one { font-size: 34px; font-weight: 800; }
+
+/* ============ TRAFFIC-LIGHT COUNTDOWN (nav only, when data exists) ============ */
+#signal {
+    display: none; position: absolute; left: 14px; bottom: calc(236px + env(safe-area-inset-bottom)); z-index: 450;
+    align-items: center; gap: 10px; padding: 4px 18px 4px 4px; background: #1b2233; border-radius: 30px; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+}
+#signal.show { display: flex; }
+.sg-dot { width: 46px; height: 46px; border-radius: 50%; background: #e5242c; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 2px rgba(255,255,255,.28); }
+#signal.green .sg-dot { background: #1fb455; }
+#signal.yellow .sg-dot { background: #f2b705; }
+.sg-dot svg { width: 28px; height: 28px; }
+.sg-num { min-width: 50px; text-align: center; font: 900 36px/1 "Courier New", ui-monospace, monospace; letter-spacing: 2px; color: #ff3b30; text-shadow: 0 0 8px rgba(255,59,48,.55); }
+#signal.green .sg-num { color: #35e07a; text-shadow: 0 0 8px rgba(53,224,122,.5); }
+#signal.yellow .sg-num { color: #ffd23f; text-shadow: 0 0 8px rgba(255,210,63,.5); }
+
+/* ============ DIAGNOSTICS PANEL (errors / ?debug) ============ */
+#dbg { display: none; position: fixed; left: 8px; right: 8px; bottom: 8px; max-height: 55vh; z-index: 100000; flex-direction: column;
+    background: rgba(10,14,24,.96); color: #d7e0ee; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+.dbg-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #1b2540; font-size: 13px; }
+.dbg-bar button { margin-left: 8px; padding: 5px 12px; border: 0; border-radius: 12px; background: #2878ff; color: #fff; font-size: 12px; }
+#dbg-body { margin: 0; padding: 10px 12px; overflow: auto; font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; user-select: text; -webkit-user-select: text; }
+
+/* ============ LOADING / TOAST ============ */
+#loading-overlay { position: fixed; inset: 0; background: rgba(18,24,38,.65); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 12px; z-index: 99998; }
+.spinner { width: 36px; height: 36px; border: 4px solid rgba(255,255,255,.25); border-top-color: #2878ff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading-text { color: #fff; font-size: 14px; }
+#toast {
+    position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 99990; display: none;
+    max-width: 86vw; padding: 10px 18px; border-radius: 22px; background: rgba(17,26,46,.92); color: #fff;
+    font-size: 13.5px; line-height: 1.4; text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+}
+
+/* ============ LOCATION MARKER (AMap navigation style) ============ */
+.loc { position: relative; width: 150px; height: 150px; pointer-events: none; }
+.loc > * { position: absolute; }
+.loc-halo { left: 50%; top: 50%; width: 100px; height: 100px; margin: -50px 0 0 -50px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(40,120,255,.20) 0%, rgba(40,120,255,.16) 55%, rgba(40,120,255,.05) 100%);
+    border: 1px solid rgba(40,120,255,.14); }
+.loc-cone { inset: 0; border-radius: 50%;
+    background: conic-gradient(from -30deg at 50% 50%, rgba(40,120,255,.42) 0deg 60deg, transparent 60deg 360deg);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0, #000 22%, transparent 66%);
+            mask-image: radial-gradient(circle at 50% 50%, transparent 0, #000 22%, transparent 66%); }
+.loc-ring { inset: 0; width: 150px; height: 150px; overflow: visible; }
+.loc-label { transform: translate(-50%, -50%); font-size: 13px; font-weight: 800; color: #5b6676; line-height: 1;
+    text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 0 4px #fff; }
+.loc-label.n { color: #ff3b30; font-size: 16px; font-weight: 900; }
+.loc-disc { left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: #fff;
+    box-shadow: 0 3px 10px rgba(0,50,160,.30), inset 0 0 0 1px rgba(40,120,255,.12);
+    display: flex; align-items: center; justify-content: center; }
+.loc-arrow { width: 36px; height: 36px; filter: drop-shadow(0 2px 3px rgba(0,60,180,.35)); }
+.loc-dot { left: 50%; top: 50%; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%;
+    background: #2878ff; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,50,160,.4); }
+.loc.idle .nav-only { display: none; }
+.loc.idle .loc-cone { display: none; }                      /* browsing: the beam shows only once a direction is known */
+.loc.idle.has-heading .loc-cone { display: block; }
+.loc.idle .loc-halo { width: 56px; height: 56px; margin: -28px 0 0 -28px; }
+.loc.nav .idle-only { display: none; }
+
+/* ============ TRAFFIC LIGHT (stop) badge ============ */
+.tl { display: flex; gap: 3px; align-items: center; padding: 3px 7px; background: #1c2740; border: 1.5px solid #fff; border-radius: 11px; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.tl i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+.tl i:nth-child(1) { background: #f0453a; } .tl i:nth-child(2) { background: #f6c23e; } .tl i:nth-child(3) { background: #36b36a; }
+
+/* ============ DESTINATION PIN ============ */
+.dest { position: relative; width: 34px; height: 44px; pointer-events: none; }
+.dest svg { display: block; filter: drop-shadow(0 3px 4px rgba(0,0,0,.35)); }
+.dest-name { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 15px; font-weight: 800; color: #1a202c;
+    text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 0 5px #fff; }
+.dest-eta { position: absolute; top: 72px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 12.5px; font-weight: 600; color: #2878ff;
+    background: #e8f1ff; border-radius: 8px; padding: 4px 10px; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+</style>
+</head>
+<body>
+
+<div id="map-screen">
+
+  <!-- Watch sync status badge -->
+  <div id="watch-badge" style="position:fixed; top:70px; right:14px; z-index:500; background:rgba(18,26,46,0.85); color:#34d399; padding:5px 12px; border-radius:15px; font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+    <span style="width:8px; height:8px; border-radius:50%; background:#34d399; display:inline-block;"></span>
+    <span id="watch-status-txt">手表待命</span>
+  </div>
+
+  <div id="map-container"></div>
+
+  <!-- PAGE 1: browse / search -->
+  <div id="search-bar">
+    <div id="search-input-wrap">
+      <span class="ico">🔍</span>
+      <input id="tipinput" type="text" placeholder="输入目的地..." autocomplete="off">
+      <button id="clear-btn" onclick="clearSearch()">✕</button>
+    </div>
+    <button id="settings-btn" onclick="Android.openSettings()" aria-label="设置">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a202c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+
+  <!-- Right pill: refresh / re-plan (preview + riding) + confirm my location (always visible) -->
+  <div id="right-pill">
+    <button id="btn-refresh" onclick="onRefresh()" aria-label="重新规划">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1a202c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.7-6"/><path d="M20 4v5h-5"/></svg>
+    </button>
+    <button id="btn-locate" onclick="GPS.locate()" aria-label="我的位置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1a202c" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.3" fill="#1a202c" stroke="none"/><path d="M12 2v3.2M12 18.8V22M2 12h3.2M18.8 12H22"/></svg>
+    </button>
+  </div>
+
+  <!-- PAGE 2: route preview + start -->
+  <div id="preview-sheet">
+    <div class="ps-head">
+      <div class="ps-title" id="ps-title">目的地</div>
+      <button class="ps-close" onclick="cancelPreview()" aria-label="取消">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="3" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+      </button>
+    </div>
+    <div class="ps-info"><span><b id="ps-time">--</b></span><span id="ps-dist">--</span><span class="eta" id="ps-eta"></span></div>
+    <div class="ps-btns">
+    <button class="ps-start" onclick="startRide()">
+      <svg viewBox="0 0 24 24"><path d="M15.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM5 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5zm5.8-10l2.4-2.4.8.8c1.3 1.3 3 2.1 5 2.1V9c-1.5 0-2.7-.6-3.6-1.5l-1.9-1.9c-.4-.4-.9-.6-1.5-.6s-1.1.2-1.4.6L7.8 8.4C7.3 8.9 7 9.5 7 10.2V15h2v-4.2l1.8-1.8zM19 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z"/></svg>
+      开始骑行
+    </button>
+    <button class="ps-start sim" onclick="startRide(true)">模拟</button>
+    </div>
+  </div>
+
+  <!-- PAGE 3: cycling navigation -->
+  <div id="nav-ui">
+    <div id="nav-banner">
+      <div class="nb-icon" id="nb-icon"></div>
+      <div class="nb-text"><div class="nb-l1" id="nb-l1"></div><div class="nb-l2" id="nb-l2"></div></div>
+    </div>
+
+    <div id="signal">
+      <div class="sg-dot"><svg viewBox="0 0 24 24" id="sg-arrow"><path d="M12 20V6M5.5 12.5L12 6l6.5 6.5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="sg-num" id="sg-num">--</div>
+    </div>
+
+    <button id="pill-3d" onclick="toggle3D()">
+      <div class="t" id="pill-3d-t">3D</div>
+      <div class="s" id="pill-3d-s">车道级</div>
+    </button>
+
+    <div id="bottom-bar">
+      <button class="bar-icon" onclick="exitNavigation()" aria-label="退出">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1a202c" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+      </button>
+      <button class="bar-center" onclick="resumeNavigation()">继续导航</button>
+      <button class="bar-icon" onclick="showOverview()" aria-label="全览">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1a202c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="5" cy="5" r="1.6" fill="#1a202c"/>
+          <path d="M8 5h7a4 4 0 0 1 0 8H9a3.5 3.5 0 0 0 0 7h9"/>
+          <path d="M16 17l3 3-3 3" transform="translate(0,-3)"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay"><div class="spinner"></div><p id="loading-text">加载中...</p></div>
+<div id="toast"></div>
+<div id="dbg">
+  <div class="dbg-bar"><b>诊断信息</b><span><button onclick="copyDbg()">复制</button><button onclick="document.getElementById('dbg').style.display='none'">关闭</button></span></div>
+  <pre id="dbg-body"></pre>
+</div>
+
+<script>
+
+/* Inside the Android app (a WebView) window.Android exists: the app does the GPS, talks to the bike unit,
+   and stores the keys. Served by the board in a browser, everything works as before. */
+const NATIVE = !!window.Android;
+if (NATIVE) document.body.classList.add('native');
+
+let lastGpsSendTime = 0;
+let physicalCompassHeading = null;
+let lastSentHeading = -999;
+
+function onCompassUpdate(h) {
+    if (typeof h !== 'number' || isNaN(h)) return;
+    if (typeof GPS !== 'undefined' && GPS.simTimer) return;       // simulated ride: the route decides the direction
+    physicalCompassHeading = Math.round((h + 360) % 360);
+    if (typeof state !== 'undefined') {
+        state.heading = physicalCompassHeading;
+        if (typeof updateLocationVisual === 'function') updateLocationVisual();
+    }
+
+    const now = Date.now();
+    if (Math.abs(physicalCompassHeading - lastSentHeading) >= 2 && (now - lastGpsSendTime >= 200)) {
+        const lat = (typeof state !== 'undefined' && state.pos) ? state.pos[1] : 30.25;
+        const lng = (typeof state !== 'undefined' && state.pos) ? state.pos[0] : 120.15;
+        const speed = (typeof state !== 'undefined') ? state.speedKmh : 0;
+        syncGpsToWatch(lat, lng, physicalCompassHeading, speed);
+    }
+}
+
+function requestCompassPermission() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+            .then(res => { if (res === 'granted') bindCompassEvents(); })
+            .catch(console.error);
+    } else {
+        bindCompassEvents();
+    }
+}
+
+function bindCompassEvents() {
+    if (!window.DeviceOrientationEvent) return;
+    window.addEventListener('deviceorientationabsolute', function(e) {
+        if (e.alpha !== null) {
+            onCompassUpdate((360 - e.alpha) % 360);
+        }
+    }, true);
+    window.addEventListener('deviceorientation', function(e) {
+        if (e.webkitCompassHeading) {
+            onCompassUpdate(e.webkitCompassHeading);
+        } else if (physicalCompassHeading === null && e.alpha !== null) {
+            onCompassUpdate((360 - e.alpha) % 360);
+        }
+    }, true);
+}
+
+if (!NATIVE) {
+    bindCompassEvents();
+    document.addEventListener('click', function() { requestCompassPermission(); }, { once: true });
+}
+
+function syncGpsToWatch(lat, lng, heading, speed) {
+    const simming = !!(typeof GPS !== 'undefined' && GPS.simTimer);
+    if (NATIVE && !simming) return;           // the app's background service sends the position
+    const now = Date.now();
+    if (now - lastGpsSendTime < 150) return;
+    lastGpsSendTime = now;
+
+    // Use physical compass heading if available, or GPS movement heading
+    let sendHeading = (!simming && typeof physicalCompassHeading === 'number' && !isNaN(physicalCompassHeading))
+                      ? physicalCompassHeading : (heading || 0);
+    lastSentHeading = sendHeading;
+
+    const isNav = (typeof state !== 'undefined' && state.mode === 'nav' && typeof maneuvers !== 'undefined' && maneuvers.length && typeof cum !== 'undefined' && cum.length);
+
+    const payload = {
+        lat: lat,
+        lon: lng,
+        heading: Math.round(sendHeading),
+        speed: speed || 0,                 // km/h
+        nav: !!isNav
+    };
+    if (simming) payload.sim = true;            // simulated ride: the unit ignores real GPS and can ask us to stop
+
+    if (isNav) {
+        // The watch mirrors the phone: same banner text, same icon, same trip numbers.
+        const g = guideForWatch();
+        if (g) payload.guide = g;
+        const sd = alongPos();
+        const total = cum[cum.length - 1] || 0;
+        const rm = Math.max(0, Math.round(total - sd));
+        const rs = (total > 0 && state.route) ? Math.round(state.route.time * rm / total) : 0;
+        payload.info = { rm: rm, rs: rs, eta: fmtClock(new Date(Date.now() + rs * 1000)) };
+    }
+
+    if (NATIVE) {                             // simulated fixes go through the app (it knows the unit's address)
+        try { Android.simFix(JSON.stringify(payload)); } catch (e) {}
+        return;
+    }
+
+    fetch('/api/gps', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    }).then(res => {
+        const el = document.getElementById('watch-status-txt');
+        if (el) el.innerText = '手表已连接';
+        return res.json().catch(() => null);
+    }).then(j => {
+        if (j && j.stop) window.nativeSimStop();   // stopped on the unit
+    }).catch(err => {
+        const el = document.getElementById('watch-status-txt');
+        if (el) el.innerText = '手表离线';
+    });
+}
+
+/* Douglas-Peucker in metres. Keeps every bend (unlike taking every Nth point, which
+   cut corners and pushed the route off the road centre on the watch). */
+function simplifyPath(pts, tolM, maxPts) {
+    const n = pts.length;
+    if (n <= 2) return pts.slice();
+    const M = 111320, k = Math.cos(pts[0][1] * Math.PI / 180);
+    const X = pts.map(p => p[0] * k * M), Y = pts.map(p => p[1] * M);
+    let tol = tolM, out = pts;
+    for (let pass = 0; pass < 10; pass++) {
+        const keep = new Uint8Array(n);
+        keep[0] = keep[n - 1] = 1;
+        const stack = [[0, n - 1]];
+        while (stack.length) {
+            const [a, b] = stack.pop();
+            const dx = X[b] - X[a], dy = Y[b] - Y[a], l2 = dx * dx + dy * dy;
+            let md = -1, mi = -1;
+            for (let i = a + 1; i < b; i++) {
+                let d;
+                if (l2 === 0) d = Math.hypot(X[i] - X[a], Y[i] - Y[a]);
+                else {
+                    let t = ((X[i] - X[a]) * dx + (Y[i] - Y[a]) * dy) / l2;
+                    t = Math.max(0, Math.min(1, t));
+                    d = Math.hypot(X[i] - X[a] - t * dx, Y[i] - Y[a] - t * dy);
+                }
+                if (d > md) { md = d; mi = i; }
+            }
+            if (md > tol) { keep[mi] = 1; stack.push([a, mi], [mi, b]); }
+        }
+        out = [];
+        for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
+        if (out.length <= maxPts) break;
+        tol *= 1.8;
+    }
+    return out;
+}
+
+function syncRouteToWatch(waypoints, destName, destLat, destLon) {
+    if (NATIVE) {                             // the app builds the message for the unit and follows the route
+        try {
+            Android.startRide(JSON.stringify({
+                path: routePath, steps: segInfo,
+                distance: (state.route || {}).distance || 0, time: (state.route || {}).time || 0,
+                destName: destName || '目的地', dest: [destLon, destLat]
+            }));
+        } catch (e) { toast('手表同步失败', 2000); }
+        return;
+    }
+    const pts = simplifyPath(waypoints.map(p => [+(+p[0]).toFixed(6), +(+p[1]).toFixed(6)]), 1.5, 700);
+
+    const tl_coords = (lights || []).map(l => {
+        const p = routePath[l.idx];
+        return p ? [p[0], p[1]] : null;
+    }).filter(Boolean);
+
+    // Steps let the device build the turn banner itself (it keeps working with the phone screen off).
+    // [lng, lat, angle, road]; angle 0 = the road just changes name.
+    const turnAt = new Map((maneuvers || []).filter(m => !m.arrive).map(m => [m.idx, Math.round(m.d)]));
+    const st = (segInfo || []).filter(s => routePath[s.idx]).map(s => {
+        const p = routePath[s.idx];
+        return [+(+p[0]).toFixed(6), +(+p[1]).toFixed(6), turnAt.get(s.idx) || 0, s.road || ''];
+    });
+
+    fetch('/api/route', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            dest_name: destName || '目的地',
+            dest_lat: destLat,
+            dest_lon: destLon,
+            waypoints: pts,
+            traffic_lights: tl_coords,
+            st: st
+        })
+    }).then(r => r.json()).then(data => {
+        toast('路线已同步至手表 ⌚', 1500);
+    }).catch(e => {
+        toast('手表同步失败', 2000);
+    });
+}
+
+/* The watch shows no route until a ride starts; this wipes it (ride ended, page reloaded). */
+function syncClearToWatch(atLoad) {
+    if (NATIVE) { if (!atLoad) Android.endRide(); return; }   // do not end a ride that is running when the page reloads
+    fetch('/api/clear', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' }).catch(() => {});
+}
+
+/* =====================================================================
+   DIAGNOSTICS  - an on-screen log so problems on a phone can be read without dev tools.
+   Shows itself on any error, or if the map is not ready after 10 s. Add ?debug to always show it
+   (then search a destination: it also prints which fields the cycling API returned).
+   ===================================================================== */
+const DEBUG = /debug/.test(location.search + location.hash);
+const dbgLines = [];
+function hasWebGL() {
+    try { const c = document.createElement('canvas'); return !!(c.getContext('webgl') || c.getContext('experimental-webgl')); }
+    catch (e) { return false; }
+}
+function dbgText() {
+    const env = ['UA: ' + navigator.userAgent, 'screen: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio + 'x',
+                 'page: ' + location.protocol + '//' + (location.host || '(local file)'), 'WebGL: ' + hasWebGL(),
+                 'AMap SDK: ' + (window.AMap ? (AMap.version || 'loaded') : 'not loaded')];
+    return env.concat(['-----'], dbgLines).join('\n');
+}
+function showDbg() { document.getElementById('dbg').style.display = 'flex'; document.getElementById('dbg-body').textContent = dbgText(); }
+function dbg(msg) {
+    dbgLines.push(new Date().toTimeString().slice(0, 8) + '  ' + msg);
+    if (document.getElementById('dbg').style.display === 'flex') showDbg();
+}
+function copyDbg() {
+    const t = dbgText();
+    try { navigator.clipboard.writeText(t); } catch (e) { const r = document.createRange(); r.selectNodeContents(document.getElementById('dbg-body')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+}
+window.addEventListener('error', e => { dbg('ERROR: ' + (e.message || (e.target && (e.target.src || e.target.href)) || 'resource failed') + (e.lineno ? '  line ' + e.lineno : '')); showDbg(); }, true);
+window.addEventListener('unhandledrejection', e => { dbg('PROMISE: ' + ((e.reason && e.reason.message) || e.reason)); showDbg(); });
+setTimeout(() => { if (!window.__mapReady) { dbg('map not ready after 10 s'); showDbg(); } }, 10000);
+dbg('page started');
+if (DEBUG) showDbg();
+
+/* =====================================================================
+   KEYS + CONFIG
+   ===================================================================== */
+// Filled in at build time from include/secrets.h (AMAP_JS_KEY / AMAP_JS_SECURITY_CODE); see README.
+let AMAP_KEY = '__AMAP_KEY__';
+let AMAP_SECURITY_CODE = '__AMAP_SECURITY_CODE__';
+if (NATIVE) {                                 // keys saved in the app's settings override the built-in ones
+    try {
+        const c = JSON.parse(Android.getConfig());
+        if (c.key) AMAP_KEY = c.key;
+        if (c.sec) AMAP_SECURITY_CODE = c.sec;
+    } catch (e) {}
+}
+
+const FIXED_LOCATION = { lng: 120.124889, lat: 30.192640, name: '浙江大学之江校区 (之江路51号)' };
+
+const CONFIG = {
+    MAP_STYLE: 'amap://styles/normal',     // 'amap://styles/whitesmoke' | 'amap://styles/normal' | your own style id
+    BROWSE_ZOOM: 16,
+    NAV_ZOOM: 17.5,
+    NAV_PITCH: 40,
+    FORWARD_OFFSET_M: 70,                 // pushes the arrow toward the lower part of the screen while riding
+    SHOW_DIRECT_LINE: true,               // thin red line from you to the destination (as in the real app)
+    TRACK_REAL_GPS_ON_START: true,        // after 开始骑行, follow the device GPS (ignored if it is outside China)
+    ALLOW_OUTSIDE_CHINA: false,           // AMap has no map/route data abroad; fixes outside China are ignored
+    GUIDE_NEAR_M: 200,                    // show "N米后 左转" once the next turn is closer than this
+    OFF_ROUTE_M: 60,                      // metres away from the route (3 fixes in a row) before re-planning
+    LIGHT_MIN_SPACING_M: 90               // min distance between two traffic-light badges
+};
+
+/* =====================================================================
+   STATE
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+let map, autoComplete, riding, geolocation;
+let posMarker, destMarker, routePolyline, directLine;
+let lights = [];                          // [{ marker, idx }]
+let routePath = [];
+let routeProgress = 0;
+let locEl = {};
+let cum = [], segInfo = [], maneuvers = [];     // guidance data (cumulative metres, segments, turns)
+let rerouting = false, offCount = 0, lastPathPos = null, signalTimer = null;
+
+// Test ride without GPS: open the page with ?sim  (or ?sim=25 for 25 km/h).
+// Also fakes a traffic-light countdown near the badges so you can see that UI.
+const SIM = (() => { const m = (location.search + location.hash).match(/sim(?:=(\d+))?/); return m ? (+m[1] || 18) : 0; })();
+
+const state = {
+    mode: 'browse',                       // 'browse' | 'preview' | 'nav'
+    pos: [FIXED_LOCATION.lng, FIXED_LOCATION.lat],
+    heading: 0,                           // degrees clockwise from north
+    speedKmh: 0,
+    following: true,
+    is3D: true,
+    dest: null,
+    destName: '',
+    route: null                           // { distance, time }
+};
+
+/* =====================================================================
+   HELPERS
+   ===================================================================== */
+const norm360 = a => ((a % 360) + 360) % 360;
+const norm180 = a => { a = norm360(a); return a > 180 ? a - 360 : a; };
+const toXY = p => (p && p.lng !== undefined) ? [p.lng, p.lat] : [p[0], p[1]];
+const inChina = (lng, lat) => lng > 73 && lng < 136 && lat > 3 && lat < 54;
+
+function bearing(a, b) {
+    const k = Math.PI / 180;
+    return norm360(Math.atan2((b[0] - a[0]) * Math.cos(a[1] * k), b[1] - a[1]) * 180 / Math.PI);
+}
+function dist(a, b) {
+    const R = 6371000, k = Math.PI / 180;
+    const dLat = (b[1] - a[1]) * k, dLng = (b[0] - a[0]) * k;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * k) * Math.cos(b[1] * k) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+}
+function offsetPoint(lng, lat, headingDeg, meters) {
+    const r = headingDeg * Math.PI / 180;
+    return [lng + meters * Math.sin(r) / (111320 * Math.cos(lat * Math.PI / 180)),
+            lat + meters * Math.cos(r) / 111320];
+}
+function fmtDist(m) { return m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 0 : 1) + '公里' : Math.round(m) + '米'; }
+function fmtTime(s) {
+    const m = Math.max(1, Math.round(s / 60));
+    return m < 60 ? m + '分钟' : Math.floor(m / 60) + '小时' + (m % 60 ? (m % 60) + '分' : '');
+}
+function fmtClock(d) { return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+function esc(t) { return String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function showLoading(t) { $('loading-text').textContent = t || '加载中...'; $('loading-overlay').style.display = 'flex'; }
+function hideLoading() { $('loading-overlay').style.display = 'none'; }
+
+let toastTimer = null;
+function toast(msg, ms = 2800) {
+    const el = $('toast');
+    el.textContent = msg; el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.style.display = 'none'; }, ms);
+}
+
+function setMode(m) {
+    state.mode = m;
+    document.body.classList.toggle('preview-mode', m === 'preview');
+    document.body.classList.toggle('nav-mode', m === 'nav');
+}
+
+/* =====================================================================
+   SDK LOADER
+   ===================================================================== */
+function loadAMapSDK() {
+    showLoading('正在加载高德地图...');
+    window._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY_CODE };
+
+    const s = document.createElement('script');
+    s.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=AMap.AutoComplete,AMap.Riding,AMap.Scale,AMap.Geolocation`;
+
+    s.onload = () => {
+        dbg('AMap SDK loaded');
+
+        // Mobile browsers need the map container visible and measured before AMap.Map is created.
+        $('map-screen').style.display = 'block';
+
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                try {
+                    const container = $('map-container');
+                    dbg(`map container: ${container.clientWidth}x${container.clientHeight}`);
+
+                    if (!container.clientWidth || !container.clientHeight) {
+                        throw new Error('Map container has zero width or height');
+                    }
+                    if (!window.AMap || !AMap.Map) {
+                        throw new Error('AMap SDK loaded but AMap.Map is unavailable');
+                    }
+
+                    initMap();
+                } catch (e) {
+                    hideLoading();
+                    dbg('initMap failed: ' + (e && (e.stack || e.message) || e));
+                    showDbg();
+                }
+            });
+        });
+    };
+
+    s.onerror = () => {
+        hideLoading();
+        dbg('AMap SDK failed to load (network / blocked / wrong key)');
+        if (/claudeusercontent|claude\.ai/.test(location.host)) {
+            dbg('This page is inside an embedded preview. Try hosting it over HTTPS or opening it directly in a browser.');
+        }
+        showDbg();
+    };
+
+    document.head.appendChild(s);
+}
+
+/* =====================================================================
+   MAP INIT  (page 1: normal map at the hard-coded location)
+   ===================================================================== */
+function initMap() {
+    hideLoading();
+
+    map = new AMap.Map('map-container', {
+        viewMode: hasWebGL() ? '3D' : '2D', 
+        mapStyle: CONFIG.MAP_STYLE,
+        zoom: CONFIG.BROWSE_ZOOM,
+        pitch: 0,
+        center: state.pos,
+        showBuildingBlock: true,
+        showLabel: true,
+        resizeEnable: true
+    });
+    map.addControl(new AMap.Scale());
+
+    try {
+        geolocation = new AMap.Geolocation({
+            enableHighAccuracy: true, timeout: 10000, maximumAge: 0, convert: true,
+            showButton: false, showMarker: false, showCircle: false, panToLocation: false, zoomToAccuracy: false
+        });
+        map.addControl(geolocation);
+    } catch (e) { console.warn('Geolocation plugin unavailable', e); }
+
+    buildLocationMarker();
+
+    destMarker = new AMap.Marker({ offset: new AMap.Pixel(-17, -44), zIndex: 380 });
+
+    riding = new AMap.Riding({ policy: 0 });
+
+    autoComplete = new AMap.AutoComplete({ input: 'tipinput', city: '杭州', citylimit: false });
+    autoComplete.on('select', onDestinationSelected);
+
+    $('tipinput').addEventListener('input', function () { $('clear-btn').style.display = this.value ? 'block' : 'none'; });
+
+    map.on('camerachange', updateLocationVisual);
+    map.on('mapmove', updateLocationVisual);
+    map.on('dragstart', () => { if (state.mode === 'nav') state.following = false; });
+
+    GPS.init();
+    if (!SIM && CONFIG.TRACK_REAL_GPS_ON_START) GPS.startTracking();   // live location from the first moment, not only during a ride
+
+    map.on('click', function(e) {
+        if (state.mode !== 'browse') return;
+        state.dest = [e.lnglat.getLng(), e.lnglat.getLat()];
+        state.destName = '地图选点';
+        document.getElementById('tipinput').value = state.destName;
+        document.getElementById('clear-btn').style.display = 'block';
+        planRoute();
+    });
+
+    window.__mapReady = true;
+    dbg('map initialized');
+    if (NATIVE) Android.pageReady();          // the app now sends the latest position
+
+    // Re-measure once AMap has rendered, without changing map styling.
+    map.on('complete', () => {
+        try {
+            map.resize();
+            dbg('AMap complete; resize called');
+        } catch (e) {
+            dbg('map resize warning: ' + (e && e.message || e));
+        }
+    });
+}
+
+/* =====================================================================
+   LOCATION MARKER  (blue dot while browsing, AMap arrow + compass in nav)
+   ===================================================================== */
+function buildLocationMarker() {
+    const root = document.createElement('div');
+    root.className = 'loc idle';
+    root.innerHTML = `
+        <div class="loc-halo"></div>
+        <div class="loc-cone"></div>
+        <svg class="loc-ring nav-only" viewBox="0 0 150 150">
+            <defs><linearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#34c759"/><stop offset="1" stop-color="#ff9500"/></linearGradient></defs>
+            <path class="arc" d="" fill="none" stroke="url(#arcGrad)" stroke-width="2.5" stroke-linecap="round"/>
+            <circle class="arc-dot" r="3" fill="#34c759" stroke="#fff" stroke-width="1"/>
+        </svg>
+        <div class="loc-label nav-only n">北</div>
+        <div class="loc-label nav-only e">东</div>
+        <div class="loc-label nav-only s">南</div>
+        <div class="loc-label nav-only w">西</div>
+        <div class="loc-disc nav-only">
+            <svg class="loc-arrow" viewBox="0 0 100 100">
+                <polygon points="50,8 12,90 50,70" fill="#3d8bff"/>
+                <polygon points="50,8 88,90 50,70" fill="#1560e8"/>
+            </svg>
+        </div>
+        <div class="loc-dot idle-only"></div>`;
+    locEl = {
+        root,
+        cone: root.querySelector('.loc-cone'),
+        arrow: root.querySelector('.loc-arrow'),
+        arc: root.querySelector('.arc'),
+        arcDot: root.querySelector('.arc-dot'),
+        labels: { n: root.querySelector('.n'), e: root.querySelector('.e'), s: root.querySelector('.s'), w: root.querySelector('.w') }
+    };
+    posMarker = new AMap.Marker({ content: root, offset: new AMap.Pixel(-75, -75), position: state.pos, zIndex: 400 });
+    posMarker.setMap(map);
+}
+
+function setMarkerMode(mode) {
+    locEl.root.classList.toggle('idle', mode !== 'nav');
+    locEl.root.classList.toggle('nav', mode === 'nav');
+    updateLocationVisual();
+}
+
+function updateLocationVisual() {
+    if (!map || !locEl.root) return;
+    const rot = map.getRotation ? map.getRotation() : 0;
+    const arrowAngle = state.heading + rot;
+    locEl.cone.style.transform = `rotate(${arrowAngle}deg)`;
+    if (state.mode !== 'nav') return;                       // browsing: just the beam (arrow and compass ring are for riding)
+    locEl.arrow.style.transform = `rotate(${arrowAngle}deg)`;
+
+    const R = 40, C = 75;
+    [['n', 0], ['e', 90], ['s', 180], ['w', 270]].forEach(([k, base]) => {
+        const th = (base + rot) * Math.PI / 180;
+        locEl.labels[k].style.left = (C + R * Math.sin(th)) + 'px';
+        locEl.labels[k].style.top = (C - R * Math.cos(th)) + 'px';
+    });
+
+    const pt = a => { const t = a * Math.PI / 180; return [C + R * Math.sin(t), C - R * Math.cos(t)]; };
+    const d = norm180(rot - arrowAngle);
+    if (Math.abs(d) < 3) {
+        locEl.arc.setAttribute('d', ''); locEl.arcDot.setAttribute('r', 0);
+    } else {
+        const s = pt(arrowAngle), e = pt(rot);
+        locEl.arc.setAttribute('d', `M ${s[0]} ${s[1]} A ${R} ${R} 0 0 ${d > 0 ? 1 : 0} ${e[0]} ${e[1]}`);
+        locEl.arcDot.setAttribute('cx', s[0]); locEl.arcDot.setAttribute('cy', s[1]); locEl.arcDot.setAttribute('r', 3);
+    }
+}
+
+/* =====================================================================
+   GPS
+   - GPS.locate()        : the "my location" button. Asks the browser for GPS
+                           (falls back to IP location on laptops), moves you there.
+   - GPS.startTracking() : live follow while riding (browser watchPosition).
+   - GPS.update(fix)     : single entry point. You can also call it from the console:
+        GPS.update({lng:120.1255, lat:30.1931, heading:20, speedKmh:18})
+   Until a real fix arrives we pretend to be at FIXED_LOCATION.
+   NOTE: browsers only give precise GPS on https:// or http://localhost.
+   ===================================================================== */
+const GPS = {
+    watchId: null,
+    locating: false,
+    warnedAbroad: false,
+
+    init() { GPS.update({ lng: FIXED_LOCATION.lng, lat: FIXED_LOCATION.lat, speedKmh: 0 }, false); },
+
+    update(fix, isReal = true) {
+        const prev = state.pos;
+        const next = [fix.lng, fix.lat];
+        let heading = fix.heading;
+        if (isReal && (typeof heading !== 'number' || isNaN(heading)) && dist(prev, next) > 3) heading = bearing(prev, next);
+        state.pos = next;
+        if (typeof heading === 'number' && !isNaN(heading)) state.heading = norm360(heading);
+        state.speedKmh = fix.speedKmh || 0;
+        if (posMarker) posMarker.setPosition(state.pos);
+        syncGpsToWatch(next[1], next[0], state.heading, state.speedKmh);
+
+        if (state.mode === 'nav') {
+            updateLocationVisual();
+            if (isReal) {
+                updateRouteProgress();
+                updateBanner();
+                updateSignal();
+                if (state.following) trackCamera();
+                if (state.dest && dist(state.pos, state.dest) < 25) { toast('已到达目的地 🎉', 3500); setTimeout(exitNavigation, 1800); }
+            }
+        }
+    },
+
+    // ---- "my location" button ----
+    locate() {
+        if (NATIVE) {                         // the app already knows where we are
+            if (!GPS.hadFix) { toast('还没有定位：请到室外或靠窗，并确认手机的定位开关已打开', 4000); return; }
+            if (state.mode === 'nav') snapCamera();
+            else { map.setPitch(0); map.setRotation(0); map.setZoom(17); map.setCenter(state.pos); }
+            return;
+        }
+        if (GPS.locating) return;
+        if (state.mode === 'nav' && GPS.simTimer) { toast('模拟骑行中，已忽略定位按钮'); return; }
+        if (!geolocation) { toast('定位组件未加载'); return; }
+        GPS.locating = true;
+        $('btn-locate').classList.add('busy');
+        toast('正在获取定位…', 15000);
+
+        geolocation.getCurrentPosition((status, result) => {
+            GPS.locating = false;
+            $('btn-locate').classList.remove('busy');
+
+            if (status === 'complete' && result && result.position) {
+                const lng = result.position.lng !== undefined ? result.position.lng : result.position.getLng();
+                const lat = result.position.lat !== undefined ? result.position.lat : result.position.getLat();
+                if (!CONFIG.ALLOW_OUTSIDE_CHINA && !inChina(lng, lat)) {
+                    toast('你的定位在中国境外，高德没有地图数据，已保留默认位置（浙大之江）', 4500);
+                    return;
+                }
+                const rough = !!(result.location_type && result.location_type !== 'html5');
+
+                // Mid-ride "confirm my location": treat as a real fix, follow the rider again, restart the GPS feed.
+                if (state.mode === 'nav') {
+                    if (rough) { toast('只拿到粗略（IP）定位，不适合导航。请在手机上用 https 打开并允许定位', 4500); return; }
+                    GPS.update({ lng, lat, heading: state.heading, speedKmh: 0 }, true);
+                    snapCamera();
+                    GPS.stopTracking(); GPS.startTracking();          // in case the live feed had silently dropped
+                    if (offCount > 0) { toast('位置已确认，已偏离路线，正在重新规划', 2500); reroute(); }
+                    else toast('位置已确认', 2000);
+                    return;
+                }
+
+                GPS.update({ lng, lat, speedKmh: 0 }, false);
+                toast(rough ? '已用 IP 粗略定位（用手机或 https 可获得精确 GPS）' : '定位成功', 3200);
+
+                map.setPitch(0); map.setRotation(0);
+                if (state.mode === 'preview' && state.dest) planRoute();      // re-plan from the new position
+                else { map.setZoom(rough ? 14 : 17); map.setCenter(state.pos); }
+            } else {
+                const msg = (result && (result.message || result.info)) || '未知错误';
+                toast('定位失败：' + msg, 4500);
+            }
+        });
+    },
+
+    // ---- live tracking while riding ----
+    startTracking() {
+        if (NATIVE || GPS.watchId !== null || !navigator.geolocation) return;
+        GPS.warnedAbroad = false;
+        GPS.watchId = navigator.geolocation.watchPosition(p => {
+            const c = p.coords;
+            AMap.convertFrom([c.longitude, c.latitude], 'gps', (status, res) => {
+                if (!(res && res.info === 'ok' && res.locations && res.locations.length)) return;
+                const lng = res.locations[0].lng, lat = res.locations[0].lat;
+                if (!CONFIG.ALLOW_OUTSIDE_CHINA && !inChina(lng, lat)) {
+                    if (!GPS.warnedAbroad) { GPS.warnedAbroad = true; toast('GPS 在中国境外，已忽略（保持默认位置）', 4000); }
+                    return;
+                }
+                GPS.update({
+                    lng, lat,
+                    heading: (typeof c.heading === 'number' && !isNaN(c.heading)) ? c.heading : undefined,
+                    speedKmh: (c.speed || 0) * 3.6
+                }, true);
+                if (!GPS.hadFix) { GPS.hadFix = true; if (state.mode === 'browse') map.setCenter(state.pos); }   // show where we are
+            });
+        }, e => toast('手机卫星信号弱：' + e.message, 3500),
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 });
+    },
+    stopTracking() {
+        if (NATIVE) return;
+        if (GPS.watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(GPS.watchId);
+        GPS.watchId = null;
+    }
+};
+window.GPS = GPS;
+
+/* The app pushes every fix here (AMap coordinates, direction in degrees or null, speed in km/h). */
+window.nativeFix = function (lng, lat, heading, kmh) {
+    if (GPS.simTimer) return;                 // simulated ride: real GPS stays out of it
+    GPS.update({ lng: lng, lat: lat, heading: (heading === null ? state.heading : heading), speedKmh: kmh }, true);   // the app decides the direction; never guess one from a jump
+    if (heading !== null && locEl.root) locEl.root.classList.add('has-heading');
+    updateLocationVisual();
+    if (map && !GPS.hadFix) {
+        GPS.hadFix = true;
+        if (state.mode === 'browse') { map.setZoom(17); map.setCenter(state.pos); }   // show where we are
+    }
+};
+/* The phone was turned (compass, or GPS course while moving): turn the beam / arrow. */
+window.nativeHeading = function (deg) {
+    if (GPS.simTimer) return;
+    state.heading = norm360(deg);
+    if (locEl.root) locEl.root.classList.add('has-heading');
+    updateLocationVisual();
+};
+/* The unit's stop (long-press home on the map while a simulated ride runs) reaches us in the reply to a fix. */
+window.nativeSimStop = function () {
+    if (!GPS.simTimer) return;
+    toast('已在手表上停止模拟', 2500);
+    exitNavigation();
+};
+window.nativeStatus = function (txt) {
+    const el = document.getElementById('watch-status-txt');
+    if (el) el.innerText = txt;
+};
+
+/* Simulated ride along the planned route (for laptop testing). Console: GPS.simulate(20), GPS.stopSim() */
+GPS.simulate = function (kmh) {
+    GPS.stopSim();
+    if (!routePath.length || cum.length !== routePath.length) { toast('请先规划路线'); return; }
+    GPS.stopTracking();
+    kmh = kmh || 18;
+    const total = cum[cum.length - 1], stepM = kmh / 3.6 * 0.2;
+    let sd = 0, i = 0;
+    GPS.simTimer = setInterval(() => {
+        sd = Math.min(total, sd + stepM);
+        while (i < routePath.length - 2 && cum[i + 1] < sd) i++;
+        const a = routePath[i], b = routePath[i + 1];
+        const len = cum[i + 1] - cum[i], t = len > 0 ? (sd - cum[i]) / len : 0;
+        GPS.update({ lng: a[0] + (b[0] - a[0]) * t, lat: a[1] + (b[1] - a[1]) * t,
+                     heading: dist(a, b) > 1 ? bearing(a, b) : undefined, speedKmh: kmh }, true);
+        if (sd >= total) GPS.stopSim();
+    }, 200);
+};
+GPS.stopSim = function () { if (GPS.simTimer) clearInterval(GPS.simTimer); GPS.simTimer = null; };
+
+/* =====================================================================
+   CAMERA
+   ===================================================================== */
+function trackCamera() {
+    const c = offsetPoint(state.pos[0], state.pos[1], state.heading, CONFIG.FORWARD_OFFSET_M);
+    map.setRotation(state.is3D ? norm360(-state.heading) : 0);
+    map.setCenter(c);
+}
+function snapCamera() {
+    state.following = true;
+    map.setPitch(state.is3D ? CONFIG.NAV_PITCH : 0);
+    map.setZoom(CONFIG.NAV_ZOOM);
+    trackCamera();
+}
+
+/* =====================================================================
+   PICK DESTINATION -> PREVIEW (route + start button)
+   ===================================================================== */
+function onDestinationSelected(e) {
+    if (!e.poi || !e.poi.location) { alert('该地点没有有效坐标，请重新选择'); return; }
+    state.dest = [e.poi.location.lng, e.poi.location.lat];
+    state.destName = e.poi.name || '目的地';
+    $('tipinput').value = state.destName;
+    $('clear-btn').style.display = 'block';
+    $('tipinput').blur();
+    planRoute();
+}
+
+function planRoute() {
+    if (!state.dest) return;
+    showLoading('正在规划骑行路线...');
+    riding.search(new AMap.LngLat(state.pos[0], state.pos[1]), new AMap.LngLat(state.dest[0], state.dest[1]), (status, result) => {
+        hideLoading();
+        if (status !== 'complete' || !result.routes || !result.routes.length) {
+            toast('规划路线失败，请换一个目的地', 3500);
+            if (state.mode === 'browse') clearSearch();
+            return;
+        }
+        if (!applyRoute(result)) return;
+        enterPreview();
+    });
+}
+
+function drawRoute() {
+    routeProgress = 0;
+    if (routePolyline) routePolyline.setMap(null);
+    routePolyline = new AMap.Polyline({
+        path: routePath, isOutline: true, outlineColor: '#047CBB', borderWeight: 3,
+        strokeColor: '#02CAFE', strokeOpacity: 1, strokeWeight: 12,
+        lineJoin: 'round', lineCap: 'round', showDir: true, zIndex: 50
+    });
+    routePolyline.setMap(map);
+
+    if (directLine) { directLine.setMap(null); directLine = null; }
+    if (CONFIG.SHOW_DIRECT_LINE) {
+        directLine = new AMap.Polyline({ path: [state.pos, state.dest], strokeColor: '#ff0000', strokeWeight: 2, zIndex: 40 });
+        directLine.setMap(map);
+    }
+}
+
+/* Traffic-light badges ("stops") on the blue route.
+   AMap's riding API returns no signal data, so badges go at the junctions where
+   the route changes road (start of each segment), spaced >= LIGHT_MIN_SPACING_M. */
+function clearTrafficLights() { lights.forEach(l => l.marker.setMap(null)); lights = []; }
+function placeTrafficLights(starts) {
+    clearTrafficLights();
+    let last = null;
+    for (let i = 1; i < starts.length; i++) {
+        const idx = starts[i];
+        if (idx >= routePath.length) continue;
+        const p = routePath[idx];
+        if (dist(p, routePath[0]) < 60 || dist(p, state.dest) < 60) continue;
+        if (last && dist(p, last) < CONFIG.LIGHT_MIN_SPACING_M) continue;
+        const marker = new AMap.Marker({
+            content: '<div class="tl"><i></i><i></i><i></i></div>',
+            position: p, anchor: 'center', zIndex: 350
+        });
+        marker.setMap(map);
+        lights.push({ marker, idx });
+        last = p;
+    }
+}
+
+/* Which route segment are we on? Uses distance to the segment (not to vertices),
+   because straight roads can have vertices hundreds of metres apart. */
+function updateRouteProgress() {
+    if (!routePath.length || !routePolyline || cum.length !== routePath.length) return;
+    let best = -1, bd = Infinity;
+    for (let i = routeProgress; i < routePath.length - 1; i++) {
+        if (cum[i] - cum[routeProgress] > 400) break;
+        const d = projOnSeg(state.pos, routePath[i], routePath[i + 1]).d;
+        if (d < bd) { bd = d; best = i; }
+    }
+    if (best < 0 || bd > CONFIG.OFF_ROUTE_M) { if (++offCount >= 3) reroute(); return; }
+    offCount = 0;
+    const moved = best !== routeProgress;
+    routeProgress = best;
+    if (moved) lights = lights.filter(l => { if (l.idx <= best) { l.marker.setMap(null); return false; } return true; });
+    if (moved || !lastPathPos || dist(lastPathPos, state.pos) > 3) {      // trim the part already ridden
+        routePolyline.setPath([state.pos].concat(routePath.slice(best + 1)));
+        lastPathPos = state.pos;
+    }
+    if (directLine) directLine.setPath([state.pos, state.dest]);
+}
+
+/* =====================================================================
+   ROUTE -> GUIDANCE DATA
+   ===================================================================== */
+function applyRoute(result) {
+    const route = result.routes[0];
+    const segs = route.rides || route.steps || [];
+    dbg('Riding route keys: ' + Object.keys(route).join(', '));
+    dbg('Riding segment keys: ' + Object.keys(segs[0] || {}).join(', '));
+    try { dbg('segment[0]: ' + JSON.stringify(segs[0], (k, v) => k === 'path' ? '[' + (v && v.length) + ' pts]' : v).slice(0, 700)); } catch (e) {}
+    const path = [], info = [];
+    segs.forEach(sg => {
+        info.push({ idx: path.length, road: sg.road || '' });
+        (sg.path || []).forEach(p => path.push(toXY(p)));
+    });
+    if (path.length < 2) { toast('路线数据为空', 3000); return false; }
+    routePath = path; segInfo = info;
+    state.route = { distance: route.distance || 0, time: route.time || 0 };
+    drawRoute();
+    buildGuidance();
+    placeTrafficLights(info.map(x => x.idx));
+    lastPathPos = null;
+    if (state.mode === 'nav') syncRouteToWatch(path, state.destName, state.dest[1], state.dest[0]);   // re-route mid-ride
+    return true;
+}
+
+function projOnSeg(p, a, b) {                 // distance (m) from p to segment a-b, and position t (0..1) on it
+    const M = 111320, k = Math.cos(a[1] * Math.PI / 180);
+    const ax = (b[0] - a[0]) * k * M, ay = (b[1] - a[1]) * M, px = (p[0] - a[0]) * k * M, py = (p[1] - a[1]) * M;
+    const l2 = ax * ax + ay * ay;
+    let t = l2 ? (px * ax + py * ay) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return { d: Math.hypot(px - t * ax, py - t * ay), t, len: Math.sqrt(l2) };
+}
+function headingAt(idx, dir) {                // route direction ~12 m before (-1) / after (+1) a vertex
+    const p = routePath[idx];
+    for (let j = idx + dir; j >= 0 && j < routePath.length; j += dir) {
+        if (dist(p, routePath[j]) >= 12) return dir > 0 ? bearing(p, routePath[j]) : bearing(routePath[j], p);
+    }
+    return null;
+}
+function buildGuidance() {
+    cum = [0];
+    for (let i = 1; i < routePath.length; i++) cum[i] = cum[i - 1] + dist(routePath[i - 1], routePath[i]);
+    routeProgress = 0; offCount = 0;
+    maneuvers = [];
+    for (let k = 1; k < segInfo.length; k++) {
+        const idx = segInfo[k].idx;
+        const a = headingAt(idx, -1), b = headingAt(idx, 1);
+        if (a === null || b === null) continue;
+        const d = norm180(b - a);                         // + = right, - = left
+        if (Math.abs(d) < 25) continue;                   // road-name change, no real turn
+        maneuvers.push({ idx, d, road: segInfo[k].road });
+    }
+    maneuvers.push({ idx: routePath.length - 1, arrive: true });
+}
+function alongPos() {                         // metres ridden along the route
+    const p = Math.max(0, Math.min(routeProgress, routePath.length - 2));
+    const r = projOnSeg(state.pos, routePath[p], routePath[p + 1]);
+    return cum[p] + r.t * r.len;
+}
+function curRoad() {
+    let road = '';
+    for (const sg of segInfo) { if (sg.idx <= routeProgress) road = sg.road || road; else break; }
+    return road;
+}
+
+/* off route -> silently plan a new route from where we are */
+function reroute() {
+    if (rerouting || !state.dest || state.mode !== 'nav') return;
+    rerouting = true; offCount = 0; updateBanner();
+    riding.search(new AMap.LngLat(state.pos[0], state.pos[1]), new AMap.LngLat(state.dest[0], state.dest[1]), (status, result) => {
+        rerouting = false;
+        if (!(status === 'complete' && result.routes && result.routes.length && applyRoute(result))) toast('重新规划失败，请回到路线上', 3000);
+        updateBanner();
+    });
+}
+
+/* the ↻ button: before the ride it re-plans the preview, during the ride it re-plans from where you are */
+function onRefresh() {
+    if (state.mode === 'nav') { toast('正在重新规划路线…', 1800); reroute(); }
+    else planRoute();
+}
+
+/* =====================================================================
+   TOP BANNER  (nav mode only)
+     far from the next turn :  沿 严家路 / 直行 460 米
+     close (< GUIDE_NEAR_M)  :  60 米后 左转 / 进入 严家路
+   ===================================================================== */
+function turnIcon(kind, d) {
+    const S = 'stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" fill="none"';
+    if (kind === 'ring') return '<svg viewBox="0 0 100 100" style="animation:spin 1s linear infinite"><circle cx="50" cy="50" r="38" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-dasharray="190 50"/></svg>';
+    if (kind === 'arrive') return `<svg viewBox="0 0 100 100"><path d="M30 92V10" ${S}/><path d="M34 14h44l-13 17 13 17H34z" fill="#fff"/></svg>`;
+    if (kind === 'straight') return `<svg viewBox="0 0 100 100"><path d="M50 92V30" ${S}/><polygon points="50,6 76,36 24,36" fill="#fff"/></svg>`;
+    if (kind === 'uturn') {
+        const g = `<path d="M68 92V44a17 17 0 0 0-34 0v18" ${S}/><polygon points="20,60 48,60 34,84" fill="#fff"/>`;
+        return `<svg viewBox="0 0 100 100">${d > 0 ? `<g transform="translate(100 0) scale(-1 1)">${g}</g>` : g}</svg>`;
+    }
+    const th = d * Math.PI / 180, sn = Math.sin(th), cs = Math.cos(th);   // bent arrow, angle = d
+    const L = 34, sx = 50 - 14 * sn, by = Math.abs(d) > 100 ? 40 : 54;
+    const ex = sx + L * sn, ey = by - L * cs;
+    const tip = [ex + 16 * sn, ey - 16 * cs], b1 = [ex + 14 * cs, ey + 14 * sn], b2 = [ex - 14 * cs, ey - 14 * sn];
+    return `<svg viewBox="0 0 100 100"><path d="M${sx} 92V${by}L${ex} ${ey}" ${S}/><polygon points="${tip} ${b1} ${b2}" fill="#fff"/></svg>`;
+}
+function turnWords(d) {
+    const a = Math.abs(d), side = d < 0 ? '左' : '右';
+    if (a > 150) return { kind: 'uturn', text: '掉头' };
+    if (a >= 120) return { kind: 'turn', text: '向' + side + '后方转弯' };
+    if (a >= 55) return { kind: 'turn', text: side + '转' };
+    return { kind: 'turn', text: '向' + side + '前方行驶' };
+}
+function numUnit(m) {
+    if (m >= 1000) return [(m / 1000).toFixed(m >= 10000 ? 0 : 1), '公里'];
+    return [String(Math.max(10, Math.round(m / 10) * 10)), '米'];
+}
+/* Same decision tree as updateBanner(), as data. k = icon kind, d = turn angle (+ right),
+   n/u = number and unit, a = action, p/r = "进入"/"沿" + road name. */
+function guideForWatch() {
+    if (state.mode !== 'nav' || !routePath.length || cum.length !== routePath.length || !maneuvers.length) return null;
+    if (rerouting) return { k: 'ring', a: '正在重新规划' };
+
+    const sd = alongPos();
+    const m = maneuvers.find(x => cum[x.idx] - sd > 2) || maneuvers[maneuvers.length - 1];
+    const d = Math.max(0, cum[m.idx] - sd);
+    const [n, u] = numUnit(d);
+    const near = d <= CONFIG.GUIDE_NEAR_M;
+
+    if (m.arrive) {
+        if (d < 15) return { k: 'arrive', a: '到达目的地' };
+        if (near) return { k: 'arrive', n: n, u: u + '后', a: '到达目的地' };
+    } else if (near) {
+        const w = turnWords(m.d);
+        return { k: w.kind, d: Math.round(m.d), n: n, u: u + '后', a: w.text, p: m.road ? '进入' : '', r: m.road || '' };
+    }
+    return { k: 'straight', n: n, u: u, a: '直行', p: '沿', r: curRoad() || '当前道路' };
+}
+function setBanner(icon, l1, l2) { $('nb-icon').innerHTML = icon; $('nb-l1').innerHTML = l1; $('nb-l2').innerHTML = l2 || ''; }
+
+function updateBanner() {
+    if (state.mode !== 'nav' || !routePath.length || cum.length !== routePath.length) return;
+    if (rerouting) { setBanner(turnIcon('ring'), '<span class="nb-one">正在重新规划</span>', ''); return; }
+
+    const sd = alongPos();
+    const m = maneuvers.find(x => cum[x.idx] - sd > 2) || maneuvers[maneuvers.length - 1];
+    const d = Math.max(0, cum[m.idx] - sd);
+    const [n, u] = numUnit(d);
+    const near = d <= CONFIG.GUIDE_NEAR_M;
+
+    if (m.arrive) {
+        if (d < 15) { setBanner(turnIcon('arrive'), '<span class="nb-one">到达目的地</span>', ''); return; }
+        if (near) { setBanner(turnIcon('arrive'), `<span class="nb-big">${n}</span><span class="nb-unit">${u}后</span><span class="nb-act">到达目的地</span>`, ''); return; }
+    } else if (near) {
+        const w = turnWords(m.d);
+        setBanner(turnIcon(w.kind, m.d),
+            `<span class="nb-big">${n}</span><span class="nb-unit">${u}后</span><span class="nb-act">${w.text}</span>`,
+            m.road ? `<span class="nb-dim">进入</span> <span class="nb-road">${esc(m.road)}</span>` : '');
+        return;
+    }
+    setBanner(turnIcon('straight'),
+        `<span class="nb-dim">沿</span> <span class="nb-road">${esc(curRoad() || '当前道路')}</span>`,
+        `<span class="nb-act">直行</span> <span class="nb-big">${n}</span><span class="nb-unit">${u}</span>`);
+}
+
+/* =====================================================================
+   TRAFFIC-LIGHT COUNTDOWN PILL
+   AMap's web APIs (JS API / web services) do not publish live signal timing - the
+   countdown in the AMap app comes from private data. So the pill is a ready-made UI:
+     * feed it real data from anything you have:  Signal.set({ state:'red'|'green'|'yellow', seconds:34, dir:'up'|'left'|'right' })
+       (call again at least every 10 s; Signal.set(null) hides it)
+     * with ?sim in the URL it shows a FAKE cycling countdown near the badges, only to preview the look.
+   ===================================================================== */
+const Signal = {
+    ext: null,
+    set(info) { Signal.ext = info ? Object.assign({ ts: Date.now() }, info) : null; updateSignal(); }
+};
+window.Signal = Signal;
+
+function demoSignalAhead() {
+    if (!SIM || !lights.length || cum.length !== routePath.length) return null;
+    const sd = alongPos();
+    const l = lights.find(x => cum[x.idx] - sd > -2 && cum[x.idx] - sd < 120);
+    if (!l) return null;
+    const t = (Date.now() / 1000 + l.idx * 7) % 78;               // 45 s red, 30 s green, 3 s yellow
+    if (t < 45) return { state: 'red', seconds: 45 - t, dir: 'up' };
+    if (t < 75) return { state: 'green', seconds: 75 - t, dir: 'up' };
+    return { state: 'yellow', seconds: 78 - t, dir: 'up' };
+}
+function updateSignal() {
+    const el = $('signal');
+    const info = state.mode !== 'nav' ? null : ((Signal.ext && Date.now() - Signal.ext.ts < 10000) ? Signal.ext : demoSignalAhead());
+    if (!info) { el.className = ''; return; }
+    el.className = 'show ' + info.state;
+    $('sg-num').textContent = String(Math.max(0, Math.ceil(info.seconds)));
+    $('sg-arrow').style.transform = 'rotate(' + (info.dir === 'left' ? -90 : info.dir === 'right' ? 90 : 0) + 'deg)';
+}
+
+/* =====================================================================
+   PAGE 2: PREVIEW
+   ===================================================================== */
+function enterPreview() {
+    setMode('preview');
+    setMarkerMode('browse');
+
+    const eta = fmtClock(new Date(Date.now() + state.route.time * 1000));
+    $('ps-title').textContent = state.destName;
+    $('ps-time').textContent = fmtTime(state.route.time);
+    $('ps-dist').textContent = fmtDist(state.route.distance);
+    $('ps-eta').textContent = '预计 ' + eta + ' 到达';
+
+    destMarker.setContent(`
+        <div class="dest">
+            <svg width="34" height="44" viewBox="0 0 34 44">
+                <path d="M17 43C17 43 2.5 27 2.5 17a14.5 14.5 0 0 1 29 0c0 10-14.5 26-14.5 26z" fill="#e94b3c" stroke="#fff" stroke-width="2.5"/>
+                <circle cx="17" cy="17" r="6" fill="#fff"/>
+            </svg>
+            <div class="dest-name">${esc(state.destName)}</div>
+            <div class="dest-eta">预计${eta}到达</div>
+        </div>`);
+    destMarker.setPosition(state.dest);
+    destMarker.setMap(map);
+
+    map.setPitch(0); map.setRotation(0);
+    // avoid = [top, bottom, left, right] in px (room for the sheet at the bottom)
+    map.setFitView([routePolyline, destMarker, posMarker], false, [70, 330, 50, 90], 18);
+}
+
+function cancelPreview() {
+    clearSearch();
+    setMode('browse');
+    map.setPitch(0); map.setRotation(0); map.setZoom(CONFIG.BROWSE_ZOOM);
+    map.setCenter(state.pos);
+}
+
+/* =====================================================================
+   PAGE 3: CYCLING NAVIGATION
+   ===================================================================== */
+const SIM_KMH = 30;                           // speed of the simulated ride (km/h)
+
+function startRide(sim) {
+    if (!routePath.length) return;
+    sim = (sim === true);                     // the 模拟 button passes true (a click event must not count)
+    setMode('nav');
+    setMarkerMode('nav');
+    destMarker.setContent(`
+        <div class="dest">
+            <svg width="34" height="44" viewBox="0 0 34 44">
+                <path d="M17 43C17 43 2.5 27 2.5 17a14.5 14.5 0 0 1 29 0c0 10-14.5 26-14.5 26z" fill="#e94b3c" stroke="#fff" stroke-width="2.5"/>
+                <circle cx="17" cy="17" r="6" fill="#fff"/>
+            </svg>
+        </div>`);
+
+    if (typeof physicalCompassHeading === 'number') {
+        state.heading = physicalCompassHeading;
+    }
+
+    syncRouteToWatch(routePath, state.destName, state.dest[1], state.dest[0]);   // watch shows the route only now
+
+    state.is3D = true;
+    $('pill-3d-t').textContent = '3D'; $('pill-3d-s').textContent = '车道级';
+    snapCamera();
+    updateLocationVisual();
+
+    if (sim) GPS.simulate(SIM_KMH);
+    else if (SIM) GPS.simulate(SIM);
+    else if (CONFIG.TRACK_REAL_GPS_ON_START) GPS.startTracking();
+
+    updateBanner();
+    updateSignal();
+    clearInterval(signalTimer);
+    signalTimer = setInterval(updateSignal, 1000);
+}
+
+function exitNavigation() {
+    syncClearToWatch();
+    GPS.stopSim();
+    if (!SIM) GPS.startTracking();          // keep the live location after the ride (no-op if already running)
+    clearInterval(signalTimer);
+    setMode('browse');
+    updateSignal();
+    setMarkerMode('browse');
+    clearSearch();
+    map.setPitch(0); map.setRotation(0); map.setZoom(CONFIG.BROWSE_ZOOM);
+    map.setCenter(state.pos);
+}
+
+function resumeNavigation() { snapCamera(); }
+
+function showOverview() {
+    state.following = false;
+    map.setPitch(0); map.setRotation(0);
+    map.setFitView([routePolyline, posMarker, destMarker], false, [90, 170, 50, 50], 18);
+}
+
+function toggle3D() {
+    state.is3D = !state.is3D;
+    $('pill-3d-t').textContent = state.is3D ? '3D' : '2D';
+    $('pill-3d-s').textContent = state.is3D ? '车道级' : '正北';
+    snapCamera();
+}
+
+function clearSearch() {
+    $('tipinput').value = '';
+    $('clear-btn').style.display = 'none';
+    if (routePolyline) { routePolyline.setMap(null); routePolyline = null; }
+    if (directLine) { directLine.setMap(null); directLine = null; }
+    if (destMarker) destMarker.setMap(null);
+    clearTrafficLights();
+    routePath = []; routeProgress = 0; cum = []; segInfo = []; maneuvers = []; state.dest = null; state.route = null;
+}
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+syncClearToWatch(true);
+loadAMapSDK();
+</script>
+</body>
+</html>
