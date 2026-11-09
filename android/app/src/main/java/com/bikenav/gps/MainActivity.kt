@@ -424,8 +424,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(8))
         }
-        val jsKey = field(col, "AMap Web端 key (map, search, routes)", prefs.getString("js_key", "").orEmpty(), "built-in key")
-        val jsSec = field(col, "AMap security code (belongs to that key)", prefs.getString("js_sec", "").orEmpty(), "built-in code")
+        val jsKey = field(col, "AMap Web端 key (map, search, routes)", prefs.getString("js_key", "").orEmpty(), "required: your AMap Web key")
+        val jsSec = field(col, "AMap security code (belongs to that key)", prefs.getString("js_sec", "").orEmpty(), "required: its security code")
         val restKey = field(col, "AMap Web服务 key (optional: re-plan the route while the screen is off)",
             prefs.getString("amap_key", "").orEmpty(), "")
 
